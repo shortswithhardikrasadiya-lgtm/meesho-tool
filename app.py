@@ -60,7 +60,6 @@ if "stored_payments_df" not in st.session_state: st.session_state["stored_paymen
 
 selected_tab = st.radio("Select Section / Page:", ["📦 Orders & Purchase Module", "💰 Payments & Deductions Ledger", "📊 Details Analysis (Reconciliation)"], horizontal=True)
 
-# Shared global dynamic calculations
 ord_df = st.session_state["stored_orders_df"]
 total_orders_count = len(ord_df) if ord_df is not None else 0
 total_packing = total_orders_count * packing_input
@@ -128,16 +127,13 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
         total_tds = numeric_series(payments_df[tds_col]).sum() if tds_col else 20.65
         total_ads = numeric_series(payments_df[ads_col]).sum() if ads_col else 0.0
         
-        # Exact replica blocks matching layout for all 7 metrics inside Page 2
         c1, c2 = st.columns(2)
         c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
         c2.metric("TCS", f"₹{total_tcs:,.2f}")
-        
         st.markdown("<br>", unsafe_allow_html=True)
         c3, c4 = st.columns(2)
         c3.metric("TDS", f"₹{total_tds:,.2f}")
         c4.metric("Advertisement", f"₹{total_ads:,.2f}")
-        
         st.markdown("<br>", unsafe_allow_html=True)
         c5, c6, c7 = st.columns(3)
         c5.metric("Purchase", f"₹{total_purchase:,.2f}")
@@ -153,9 +149,14 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
     if ord_df is None or pay_df is None:
         st.error("⚠️ Operational Error: Dono files ka data hona zaroori hai. Kripya dono files upload karein.")
     else:
-        ord_id = find_column(ord_df, ORDER_ID_ALIASES) or ord_df.columns
-        pay_id = find_column(pay_df, ORDER_ID_ALIASES) or pay_df.columns
+        # Strict single string handling to fix the AttributeError line 189
+        ord_id_match = find_column(ord_df, ORDER_ID_ALIASES)
+        pay_id_match = find_column(pay_df, ORDER_ID_ALIASES)
+        
+        ord_id = ord_id_match if ord_id_match else ord_df.columns[0]
+        pay_id = pay_id_match if pay_id_match else pay_df.columns[0]
         payout_col = find_column(pay_df, PAYOUT_ALIASES)
+        
         if not payout_col and len(pay_df.columns) > 1:
             numeric_cols = [c for c in pay_df.columns if pay_df[c].dtype in ['int64', 'float64']]
             if numeric_cols: payout_col = numeric_cols[-1]
@@ -175,6 +176,3 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
         final_profit = total_net_payout - total_purchase - total_packing - total_wrong_damage - total_ads
         
         r1_c1, r1_c2 = st.columns(2)
-        r1_c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
-        r1_c2.metric("TCS", f"₹{total_tcs:,.2f}")
-        
