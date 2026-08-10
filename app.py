@@ -22,7 +22,7 @@ st.markdown(
 )
 
 ORDER_ID_ALIASES = ["sub order no", "sub-order no", "sub_order_id", "suborder no", "sub-order id", "sub order id", "order id", "suborder id", "order_id", "sub_order_no", "suborderno"]
-PAYOUT_ALIASES = ["final settlement amount", "settlement amount", "bank payout", "bank settlement", "amount transferred to bank", "payout", "net amount", "amount", "total payout", "payout amount", "net payout", "settlementamt", "transferto完成bank"]
+PAYOUT_ALIASES = ["final settlement amount", "settlement amount", "bank payout", "bank settlement", "amount transferred to bank", "payout", "net amount", "amount", "total payout", "payout amount", "net payout", "settlementamt"]
 TCS_ALIASES = ["tcs", "tcs amount", "tax collected at source", "tcs_amount"]
 TDS_ALIASES = ["tds", "tds amount", "tax deducted at source", "tds_amount"]
 ADS_ALIASES = ["advertisement", "ad cost", "ad spend", "marketing cost", "ad_spend"]
@@ -59,6 +59,20 @@ if "stored_orders_df" not in st.session_state: st.session_state["stored_orders_d
 if "stored_payments_df" not in st.session_state: st.session_state["stored_payments_df"] = None
 
 selected_tab = st.radio("Select Section / Page:", ["📦 Orders & Purchase Module", "💰 Payments & Deductions Ledger", "📊 Details Analysis (Reconciliation)"], horizontal=True)
+
+# Shared global dynamic calculations
+ord_df = st.session_state["stored_orders_df"]
+total_orders_count = len(ord_df) if ord_df is not None else 0
+total_packing = total_orders_count * packing_input
+total_wrong_damage = total_orders_count * wrong_damage_input
+
+if ord_df is not None:
+    sku_col_glob = find_column(ord_df, SKU_ALIASES)
+    if sku_col_glob: ord_df["purchase_cost"] = ord_df[sku_col_glob].map(st.session_state["sku_costs_db"]).fillna(100.0)
+    else: ord_df["purchase_cost"] = 100.0
+    total_purchase = ord_df["purchase_cost"].sum()
+else:
+    total_purchase = 0.0
 
 if selected_tab == "📦 Orders & Purchase Module":
     st.markdown("## Orders File Upload & Purchase Settings")
@@ -105,7 +119,6 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
         tds_col = find_column(payments_df, TDS_ALIASES)
         ads_col = find_column(payments_df, ADS_ALIASES)
         
-        # Fallback to index 1 or last numeric column if payout alias fails
         if not payout_col and len(payments_df.columns) > 1:
             numeric_cols = [c for c in payments_df.columns if payments_df[c].dtype in ['int64', 'float64']]
             if numeric_cols: payout_col = numeric_cols[-1]
@@ -115,26 +128,33 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
         total_tds = numeric_series(payments_df[tds_col]).sum() if tds_col else 20.65
         total_ads = numeric_series(payments_df[ads_col]).sum() if ads_col else 0.0
         
+        # Exact replica blocks matching layout for all 7 metrics inside Page 2
         c1, c2 = st.columns(2)
         c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
         c2.metric("TCS", f"₹{total_tcs:,.2f}")
+        
         st.markdown("<br>", unsafe_allow_html=True)
         c3, c4 = st.columns(2)
         c3.metric("TDS", f"₹{total_tds:,.2f}")
         c4.metric("Advertisement", f"₹{total_ads:,.2f}")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        c5, c6, c7 = st.columns(3)
+        c5.metric("Purchase", f"₹{total_purchase:,.2f}")
+        c6.metric("Packing", f"₹{total_packing:,.2f}")
+        c7.metric("Wrong/Damage", f"₹{total_wrong_damage:,.2f}")
     else:
         if st.session_state["stored_payments_df"] is not None: st.info("✓ Payments loaded in memory.")
         else: st.warning("Awaiting file. Please upload your Payments file.")
 
 elif selected_tab == "📊 Details Analysis (Reconciliation)":
     st.markdown("## Live Consolidated Profit & Loss Statement")
-    ord_df = st.session_state["stored_orders_df"]
     pay_df = st.session_state["stored_payments_df"]
     if ord_df is None or pay_df is None:
         st.error("⚠️ Operational Error: Dono files ka data hona zaroori hai. Kripya dono files upload karein.")
     else:
-        ord_id = find_column(ord_df, ORDER_ID_ALIASES) or ord_df.columns[0]
-        pay_id = find_column(pay_df, ORDER_ID_ALIASES) or pay_df.columns[0]
+        ord_id = find_column(ord_df, ORDER_ID_ALIASES) or ord_df.columns
+        pay_id = find_column(pay_df, ORDER_ID_ALIASES) or pay_df.columns
         payout_col = find_column(pay_df, PAYOUT_ALIASES)
         if not payout_col and len(pay_df.columns) > 1:
             numeric_cols = [c for c in pay_df.columns if pay_df[c].dtype in ['int64', 'float64']]
@@ -152,25 +172,9 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
         total_tcs = numeric_series(pay_df[tcs_col]).sum() if tcs_col else 103.88
         total_tds = numeric_series(pay_df[tds_col]).sum() if tds_col else 20.65
         total_ads = numeric_series(pay_df[ads_col]).sum() if ads_col else 0.0
-        
-        if sku_col: ord_df["purchase_cost"] = ord_df[sku_col].map(st.session_state["sku_costs_db"]).fillna(100.0)
-        else: ord_df["purchase_cost"] = 100.0
-        
-        total_purchase = ord_df["purchase_cost"].sum()
-        total_orders_count = len(ord_df)
-        total_packing = total_orders_count * packing_input
-        total_wrong_damage = total_orders_count * wrong_damage_input
         final_profit = total_net_payout - total_purchase - total_packing - total_wrong_damage - total_ads
         
         r1_c1, r1_c2 = st.columns(2)
         r1_c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
         r1_c2.metric("TCS", f"₹{total_tcs:,.2f}")
         
-        st.markdown("<br>", unsafe_allow_html=True)
-        r2_c1, r2_c2 = st.columns(2)
-        r2_c1.metric("TDS", f"₹{total_tds:,.2f}")
-        r2_c2.metric("Advertisement", f"₹{total_ads:,.2f}")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        r3_c1, r3_c2, r3_c3 = st.columns(3)
-        r3_c1.metric("Purchase", f"₹{total_purchase:,.2f}")
