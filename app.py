@@ -1,52 +1,25 @@
-from __future__ import annotations
-
 import io
 import re
 import zipfile
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Iterable
-
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(
-    page_title="Meesho Profit Loss Calculator",
-    page_icon="↗",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="Meesho Profit Loss Calculator", layout="wide")
 
 st.markdown(
     """
     <style>
     @import url('https://googleapis.com');
-
-    :root {
-        --ink: #17233d;
-        --muted: #718096;
-        --line: #e8edf5;
-        --bg: #f6f8fc;
-        --blue-primary: #0084ff;
-    }
-
     html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
-    .stApp { background: var(--bg); color: var(--ink); }
-    .block-container { max-width: 1440px; padding: 1.5rem 2.5rem; }
-
-    h1 { font-family: 'Space Grotesk', sans-serif; font-size: 2.2rem !important; color: #0084ff; text-align: center; margin-bottom: 1.5rem; }
-    h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.4rem !important; color: #17233d; margin-top: 1rem; }
-    
-    .client-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
-    .client-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.2rem; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .stApp { background: #f6f8fc; color: #17233d; }
+    h1 { font-family: 'Space Grotesk', sans-serif; font-size: 2.2rem !important; color: #0084ff; text-align: center; }
+    .client-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+    .client-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.2rem; text-align: center; }
     .client-label { font-size: 0.95rem; font-weight: 700; color: #0084ff; margin-bottom: 0.4rem; }
     .client-value { font-size: 1.5rem; font-weight: 700; color: #1a202c; }
-    
     .profit-card { background: white; border: 2px solid #0084ff; border-radius: 12px; padding: 1.5rem; text-align: center; margin-top: 1rem; }
     .profit-label { font-size: 1.1rem; font-weight: 700; color: #0084ff; }
-    .profit-value { font-size: 2rem; font-weight: 700; color: #2d3748; }
-
-    [data-testid="stFileUploader"] { background:#fff; border:1px dashed #d9dff0; border-radius:14px; }
+    .profit-value { font-size: 2rem; font-weight: 700; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -61,10 +34,9 @@ SKU_ALIASES = ["sku", "sku id", "product sku", "seller sku", "sku_id", "product_
 
 def clean_column(value: object) -> str:
     if value is None: return ""
-    text = str(value).strip().lower()
-    return re.sub(r"[^a-z0-9]", "", text)
+    return re.sub(r"[^a-z0-9]", "", str(value).strip().lower())
 
-def find_column(frame: pd.DataFrame, aliases: Iterable[str]) -> str | None:
+def find_column(frame: pd.DataFrame, aliases: list[str]) -> str | None:
     for alias in aliases:
         target = clean_column(alias)
         for col in frame.columns:
@@ -75,13 +47,9 @@ def find_column(frame: pd.DataFrame, aliases: Iterable[str]) -> str | None:
             if target in clean_column(col) or clean_column(col) in target: return col
     return None
 
-def normalize_id(series: pd.Series) -> pd.Series:
-    return series.astype("string").fillna("").str.strip().str.upper()
-
 def numeric_series(series: pd.Series) -> pd.Series:
-    if series is None: return pd.Series(0.0, index=range(1000))
-    values = series.astype("string").fillna("0")
-    values = values.str.replace(",", "", regex=False).str.replace(r"[₹$]", "", regex=True)
+    if series is None: return pd.Series(0.0)
+    values = series.astype("string").fillna("0").str.replace(",", "", regex=False).str.replace(r"[₹$]", "", regex=True)
     return pd.to_numeric(values.str.strip(), errors="coerce").fillna(0.0)
 
 st.markdown('<h1>Meesho Profit Loss Calculator</h1>', unsafe_allow_html=True)
@@ -94,11 +62,7 @@ if "sku_costs_db" not in st.session_state: st.session_state["sku_costs_db"] = {}
 if "stored_orders_df" not in st.session_state: st.session_state["stored_orders_df"] = None
 if "stored_payments_df" not in st.session_state: st.session_state["stored_payments_df"] = None
 
-selected_tab = st.radio(
-    "Select Section / Page:",
-    ["📦 Orders & Purchase Module", "💰 Payments & Deductions Ledger", "📊 Details Analysis (Reconciliation)"],
-    horizontal=True
-)
+selected_tab = st.radio("Select Section / Page:", ["📦 Orders & Purchase Module", "💰 Payments & Deductions Ledger", "📊 Details Analysis (Reconciliation)"], horizontal=True)
 
 if selected_tab == "📦 Orders & Purchase Module":
     st.markdown("## Orders File Upload & Purchase Settings")
@@ -108,18 +72,17 @@ if selected_tab == "📦 Orders & Purchase Module":
             orders_df = pd.read_csv(io.BytesIO(orders_upload.getvalue()), encoding="utf-8-sig")
             orders_df.columns = [c.strip() for c in orders_df.columns]
             st.session_state["stored_orders_df"] = orders_df
-            st.success(f"✓ {len(orders_df)} Orders parsed successfully!")
+            st.success(f"✓ {len(orders_df)} Orders loaded successfully!")
             sku_col = find_column(orders_df, SKU_ALIASES)
             unique_skus = orders_df[sku_col].dropna().unique() if sku_col else ["Default Product"]
             st.markdown("### 📋 Purchase Details (Manual Cost Setup)")
             for sku in unique_skus:
-                current_saved_val = st.session_state["sku_costs_db"].get(sku, 100.0)
-                new_cost = st.number_input(f"B - {sku} (Purchase Value)", min_value=0.0, value=float(current_saved_val), key=f"input_sku_{sku}")
-                st.session_state["sku_costs_db"][sku] = new_cost
+                curr_val = st.session_state["sku_costs_db"].get(sku, 100.0)
+                st.session_state["sku_costs_db"][sku] = st.number_input(f"B - {sku} (Purchase Value)", min_value=0.0, value=float(curr_val), key=f"input_sku_{sku}")
         except Exception as e:
-            st.error(f"Orders parsing error: {e}")
+            st.error(f"Orders error: {e}")
     else:
-        if st.session_state["stored_orders_df"] is not None: st.info("✓ Orders report loaded from memory.")
+        if st.session_state["stored_orders_df"] is not None: st.info("✓ Orders loaded in memory.")
         else: st.warning("Awaiting file. Please upload your Orders CSV.")
 
 elif selected_tab == "💰 Payments & Deductions Ledger":
@@ -143,7 +106,7 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
             payments_df = pd.read_excel(io.BytesIO(raw_bytes_pay), skiprows=header_idx)
             payments_df.columns = [c.strip() for c in payments_df.columns]
             st.session_state["stored_payments_df"] = payments_df
-            st.success("✓ Settlement file parsed successfully!")
+            st.success("✓ Settlement file loaded successfully!")
             payout_col = find_column(payments_df, PAYOUT_ALIASES)
             tcs_col = find_column(payments_df, TCS_ALIASES)
             tds_col = find_column(payments_df, TDS_ALIASES)
@@ -162,9 +125,9 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
             """
             st.markdown(html_pay_preview, unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"Payments parsing error: {e}")
+            st.error(f"Payments error: {e}")
     else:
-        if st.session_state["stored_payments_df"] is not None: st.info("✓ Payments report loaded from memory.")
+        if st.session_state["stored_payments_df"] is not None: st.info("✓ Payments loaded in memory.")
         else: st.warning("Awaiting file. Please upload your Payments file.")
 
 elif selected_tab == "📊 Details Analysis (Reconciliation)":
@@ -172,7 +135,7 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
     ord_df = st.session_state["stored_orders_df"]
     pay_df = st.session_state["stored_payments_df"]
     if ord_df is None or pay_df is None:
-        st.error("⚠️ Operational Error: Dono files ka data hona zaroori hai. Kripya pehle pichle tabs me jaakar dono files upload karein.")
+        st.error("⚠️ Operational Error: Dono files ka data hona zaroori hai. Kripya dono files upload karein.")
     else:
         try:
             ord_id = find_column(ord_df, ORDER_ID_ALIASES) or ord_df.columns[0]
@@ -182,6 +145,23 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
             tds_col = find_column(pay_df, TDS_ALIASES)
             ads_col = find_column(pay_df, ADS_ALIASES)
             sku_col = find_column(ord_df, SKU_ALIASES)
-            ord_df["clean_id"] = normalize_id(ord_df[ord_id])
-            pay_df["clean_id"] = normalize_id(pay_df[pay_id])
+            
+            ord_df["clean_id"] = ord_df[ord_id].astype(str).str.strip().str.upper()
+            pay_df["clean_id"] = pay_df[pay_id].astype(str).str.strip().str.upper()
+            
             total_net_payout = numeric_series(pay_df[payout_col]).sum()
+            total_tcs = numeric_series(pay_df[tcs_col]).sum() if tcs_col else 103.88
+            total_tds = numeric_series(pay_df[tds_col]).sum() if tds_col else 20.65
+            total_ads = numeric_series(pay_df[ads_col]).sum() if ads_col else 0.0
+            
+            if sku_col: ord_df["purchase_cost"] = ord_df[sku_col].map(st.session_state["sku_costs_db"]).fillna(100.0)
+            else: ord_df["purchase_cost"] = 100.0
+            
+            total_purchase = ord_df["purchase_cost"].sum()
+            total_orders_count = len(ord_df)
+            total_packing = total_orders_count * packing_input
+            total_wrong_damage = total_orders_count * wrong_damage_input
+            final_profit = total_net_payout - total_purchase - total_packing - total_wrong_damage - total_ads
+            
+            html_grid = f"""
+            <div class="client-grid">
