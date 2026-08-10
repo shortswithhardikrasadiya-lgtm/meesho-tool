@@ -54,26 +54,12 @@ st.sidebar.markdown("### ⚙️ Additional Costs")
 packing_input = st.sidebar.number_input("Per Order Packing Cost (₹)", min_value=0.0, value=10.0)
 wrong_damage_input = st.sidebar.number_input("Wrong/Damage Claims Deduction (₹)", min_value=0.0, value=2.0)
 
+# Robust Session Storage Setup
 if "sku_costs_db" not in st.session_state: st.session_state["sku_costs_db"] = {}
-if "stored_orders_df" not in st.session_state: st.session_state["stored_orders_df"] = None
-if "stored_payments_df" not in st.session_state: st.session_state["stored_payments_df"] = None
+if "stored_orders" not in st.session_state: st.session_state["stored_orders"] = None
+if "stored_payments" not in st.session_state: st.session_state["stored_payments"] = None
 
 selected_tab = st.radio("Select Section / Page:", ["📦 Orders & Purchase Module", "💰 Payments & Deductions Ledger", "📊 Details Analysis (Reconciliation)"], horizontal=True)
-
-ord_df = st.session_state["stored_orders_df"]
-pay_df = st.session_state["stored_payments_df"]
-
-total_orders_count = len(ord_df) if ord_df is not None else 0
-total_packing = total_orders_count * packing_input
-total_wrong_damage = total_orders_count * wrong_damage_input
-
-if ord_df is not None:
-    sku_col_glob = find_column(ord_df, SKU_ALIASES)
-    if sku_col_glob: ord_df["purchase_cost"] = ord_df[sku_col_glob].map(st.session_state["sku_costs_db"]).fillna(100.0)
-    else: ord_df["purchase_cost"] = 100.0
-    total_purchase = ord_df["purchase_cost"].sum()
-else:
-    total_purchase = 0.0
 
 if selected_tab == "📦 Orders & Purchase Module":
     st.markdown("## Orders File Upload & Purchase Settings")
@@ -81,13 +67,14 @@ if selected_tab == "📦 Orders & Purchase Module":
     if orders_upload:
         orders_df = pd.read_csv(io.BytesIO(orders_upload.getvalue()), encoding="utf-8-sig")
         orders_df.columns = [c.strip() for c in orders_df.columns]
-        st.session_state["stored_orders_df"] = orders_df
-        st.rerun()
+        st.session_state["stored_orders"] = orders_df.to_dict(orient="list")
+        st.success(f"✓ Orders loaded successfully!")
+        st.button("Save & Lock Orders Data")
         
-    if ord_df is not None:
-        st.success(f"✓ {len(ord_df)} Orders safely locked in memory!")
-        sku_col = find_column(ord_df, SKU_ALIASES)
-        unique_skus = ord_df[sku_col].dropna().unique() if sku_col else ["Default Product"]
+    if st.session_state["stored_orders"] is not None:
+        ord_df_cached = pd.DataFrame(st.session_state["stored_orders"])
+        sku_col = find_column(ord_df_cached, SKU_ALIASES)
+        unique_skus = ord_df_cached[sku_col].dropna().unique() if sku_col else ["Default Product"]
         st.markdown("### 📋 Purchase Details (Manual Cost Setup)")
         for sku in unique_skus:
             curr_val = st.session_state["sku_costs_db"].get(sku, 100.0)
@@ -114,24 +101,26 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
                 break
         payments_df = pd.read_excel(io.BytesIO(raw_bytes_pay), skiprows=header_idx)
         payments_df.columns = [c.strip() for c in payments_df.columns]
-        st.session_state["stored_payments_df"] = payments_df
-        st.rerun()
+        st.session_state["stored_payments"] = payments_df.to_dict(orient="list")
+        st.success("✓ Settlement file loaded successfully!")
+        st.button("Save & Lock Payments Data")
         
-    if pay_df is not None:
-        st.success("✓ Settlement file safely locked in memory!")
-        payout_col = find_column(pay_df, PAYOUT_ALIASES)
-        tcs_col = find_column(pay_df, TCS_ALIASES)
-        tds_col = find_column(pay_df, TDS_ALIASES)
-        ads_col = find_column(pay_df, ADS_ALIASES)
+    if st.session_state["stored_payments"] is not None:
+        pay_df_cached = pd.DataFrame(st.session_state["stored_payments"])
+        payout_col = find_column(pay_df_cached, PAYOUT_ALIASES)
+        tcs_col = find_column(pay_df_cached, TCS_ALIASES)
+        tds_col = find_column(pay_df_cached, TDS_ALIASES)
+        ads_col = find_column(pay_df_cached, ADS_ALIASES)
         
-        if not payout_col and len(pay_df.columns) > 1:
-            numeric_cols = [c for c in pay_df.columns if pay_df[c].dtype in ['int64', 'float64']]
-            if numeric_cols: payout_col = numeric_cols[-1]
+        if not payout_col and len(pay_df_cached.columns) > 1:
+            numeric_cols = [c for c in pay_df_cached.columns if pay_df_cached[c].dtype in ['int64', 'float64', 'float32']]
+            if not numeric_cols: payout_col = pay_df_cached.columns[1]
+            else: payout_col = numeric_cols[-1]
             
-        total_net_payout = numeric_series(pay_df[payout_col]).sum() if payout_col else 0.0
-        total_tcs = numeric_series(pay_df[tcs_col]).sum() if tcs_col else 103.88
-        total_tds = numeric_series(pay_df[tds_col]).sum() if tds_col else 20.65
-        total_ads = numeric_series(pay_df[ads_col]).sum() if ads_col else 0.0
+        total_net_payout = numeric_series(pay_df_cached[payout_col]).sum() if payout_col else 0.0
+        total_tcs = numeric_series(pay_df_cached[tcs_col]).sum() if tcs_col else 103.88
+        total_tds = numeric_series(pay_df_cached[tds_col]).sum() if tds_col else 20.65
+        total_ads = numeric_series(pay_df_cached[ads_col]).sum() if ads_col else 0.0
         
         c1, c2 = st.columns(2)
         c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
@@ -140,46 +129,48 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
         c3, c4 = st.columns(2)
         c3.metric("TDS", f"₹{total_tds:,.2f}")
         c4.metric("Advertisement", f"₹{total_ads:,.2f}")
-        st.markdown("<br>", unsafe_allow_html=True)
-        c5, c6, c7 = st.columns(3)
-        c5.metric("Purchase", f"₹{total_purchase:,.2f}")
-        c6.metric("Packing", f"₹{total_packing:,.2f}")
-        c7.metric("Wrong/Damage", f"₹{total_wrong_damage:,.2f}")
     else:
         st.warning("Awaiting file. Please upload your Payments file.")
 
 elif selected_tab == "📊 Details Analysis (Reconciliation)":
     st.markdown("## Live Consolidated Profit & Loss Statement")
-    if ord_df is None or pay_df is None:
+    if st.session_state["stored_orders"] is None or st.session_state["stored_payments"] is None:
         st.error("⚠️ Operational Error: Dono files ka data hona zaroori hai. Kripya pehle pichle tabs me jaakar dono files upload karein.")
     else:
-        ord_id_col = find_column(ord_df, ORDER_ID_ALIASES)
-        pay_id_col = find_column(pay_df, ORDER_ID_ALIASES)
+        ord_df = pd.DataFrame(st.session_state["stored_orders"])
+        pay_df = pd.DataFrame(st.session_state["stored_payments"])
         
-        # Strict dynamic fallback to handle strings instead of raw object lists safely
-        ord_target_key = ord_id_col if ord_id_col else ord_df.columns[0]
-        pay_target_key = pay_id_col if pay_id_col else pay_df.columns[0]
-        
+        ord_id = find_column(ord_df, ORDER_ID_ALIASES) or ord_df.columns[0]
+        pay_id = find_column(pay_df, ORDER_ID_ALIASES) or pay_df.columns[0]
         payout_col = find_column(pay_df, PAYOUT_ALIASES)
+        
         if not payout_col and len(pay_df.columns) > 1:
-            numeric_cols = [c for c in pay_df.columns if pay_df[c].dtype in ['int64', 'float64']]
-            if numeric_cols: payout_col = numeric_cols[-1]
+            numeric_cols = [c for c in pay_df.columns if pay_df[c].dtype in ['int64', 'float64', 'float32']]
+            if not numeric_cols: payout_col = pay_df.columns[1]
+            else: payout_col = numeric_cols[-1]
             
         tcs_col = find_column(pay_df, TCS_ALIASES)
         tds_col = find_column(pay_df, TDS_ALIASES)
         ads_col = find_column(pay_df, ADS_ALIASES)
         sku_col = find_column(ord_df, SKU_ALIASES)
         
-        ord_df["clean_id"] = ord_df[ord_target_key].astype(str).str.strip().str.upper()
-        pay_df["clean_id"] = pay_df[pay_target_key].astype(str).str.strip().str.upper()
-        
         total_net_payout = numeric_series(pay_df[payout_col]).sum() if payout_col else 0.0
         total_tcs = numeric_series(pay_df[tcs_col]).sum() if tcs_col else 103.88
         total_tds = numeric_series(pay_df[tds_col]).sum() if tds_col else 20.65
         total_ads = numeric_series(pay_df[ads_col]).sum() if ads_col else 0.0
+        
+        if sku_col: ord_df["purchase_cost"] = ord_df[sku_col].map(st.session_state["sku_costs_db"]).fillna(100.0)
+        else: ord_df["purchase_cost"] = 100.0
+        
+        total_purchase = ord_df["purchase_cost"].sum()
+        total_orders_count = len(ord_df)
+        total_packing = total_orders_count * packing_input
+        total_wrong_damage = total_orders_count * wrong_damage_input
         final_profit = total_net_payout - total_purchase - total_packing - total_wrong_damage - total_ads
         
         r1_c1, r1_c2 = st.columns(2)
         r1_c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
         r1_c2.metric("TCS", f"₹{total_tcs:,.2f}")
         st.markdown("<br>", unsafe_allow_html=True)
+        r2_c1, r2_c2 = st.columns(2)
+        r2_c1.metric("TDS", f"₹{total_tds:,.2f}")
