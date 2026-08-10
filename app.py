@@ -103,17 +103,14 @@ selected_tab = st.radio(
 if selected_tab == "📦 Orders & Purchase Module":
     st.markdown("## Orders File Upload & Purchase Settings")
     orders_upload = st.file_uploader("Upload Meesho Orders CSV", type=["csv"], key="tab1_orders")
-    
     if orders_upload:
         try:
             orders_df = pd.read_csv(io.BytesIO(orders_upload.getvalue()), encoding="utf-8-sig")
             orders_df.columns = [c.strip() for c in orders_df.columns]
             st.session_state["stored_orders_df"] = orders_df
             st.success(f"✓ {len(orders_df)} Orders parsed successfully!")
-            
             sku_col = find_column(orders_df, SKU_ALIASES)
             unique_skus = orders_df[sku_col].dropna().unique() if sku_col else ["Default Product"]
-            
             st.markdown("### 📋 Purchase Details (Manual Cost Setup)")
             for sku in unique_skus:
                 current_saved_val = st.session_state["sku_costs_db"].get(sku, 100.0)
@@ -128,7 +125,6 @@ if selected_tab == "📦 Orders & Purchase Module":
 elif selected_tab == "💰 Payments & Deductions Ledger":
     st.markdown("## Payments Registry & Taxation Metrics")
     payments_upload = st.file_uploader("Upload Payments ZIP / XLSX", type=["xlsx", "zip"], key="tab2_payments")
-    
     if payments_upload:
         try:
             if payments_upload.name.endswith(".zip"):
@@ -137,7 +133,6 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
                     with z.open(excel_files) as f: raw_bytes_pay = f.read()
             else:
                 raw_bytes_pay = payments_upload.getvalue()
-                
             df_raw_pay = pd.read_excel(io.BytesIO(raw_bytes_pay), header=None)
             header_idx = 0
             for i, row in df_raw_pay.iterrows():
@@ -149,17 +144,14 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
             payments_df.columns = [c.strip() for c in payments_df.columns]
             st.session_state["stored_payments_df"] = payments_df
             st.success("✓ Settlement file parsed successfully!")
-            
             payout_col = find_column(payments_df, PAYOUT_ALIASES)
             tcs_col = find_column(payments_df, TCS_ALIASES)
             tds_col = find_column(payments_df, TDS_ALIASES)
             ads_col = find_column(payments_df, ADS_ALIASES)
-            
             total_net_payout = numeric_series(payments_df[payout_col]).sum() if payout_col else 0.0
             total_tcs = numeric_series(payments_df[tcs_col]).sum() if tcs_col else 103.88
             total_tds = numeric_series(payments_df[tds_col]).sum() if tds_col else 20.65
             total_ads = numeric_series(payments_df[ads_col]).sum() if ads_col else 0.0
-            
             html_pay_preview = f"""
             <div class="client-grid">
                 <div class="client-card"><div class="client-label">Net Payout</div><div class="client-value">₹{total_net_payout:,.2f}</div></div>
@@ -179,7 +171,6 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
     st.markdown("## Live Consolidated Profit & Loss Statement")
     ord_df = st.session_state["stored_orders_df"]
     pay_df = st.session_state["stored_payments_df"]
-    
     if ord_df is None or pay_df is None:
         st.error("⚠️ Operational Error: Dono files ka data hona zaroori hai. Kripya pehle pichle tabs me jaakar dono files upload karein.")
     else:
@@ -191,5 +182,6 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
             tds_col = find_column(pay_df, TDS_ALIASES)
             ads_col = find_column(pay_df, ADS_ALIASES)
             sku_col = find_column(ord_df, SKU_ALIASES)
-            
             ord_df["clean_id"] = normalize_id(ord_df[ord_id])
+            pay_df["clean_id"] = normalize_id(pay_df[pay_id])
+            total_net_payout = numeric_series(pay_df[payout_col]).sum()
