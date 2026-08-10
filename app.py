@@ -6,6 +6,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Meesho Profit Loss Calculator", layout="wide")
 
+# Custom Styling with Safe Streamlit Functions
 st.markdown(
     """
     <style>
@@ -13,13 +14,9 @@ st.markdown(
     html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     .stApp { background: #f6f8fc; color: #17233d; }
     h1 { font-family: 'Space Grotesk', sans-serif; font-size: 2.2rem !important; color: #0084ff; text-align: center; }
-    .client-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
-    .client-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.2rem; text-align: center; }
-    .client-label { font-size: 0.95rem; font-weight: 700; color: #0084ff; margin-bottom: 0.4rem; }
-    .client-value { font-size: 1.5rem; font-weight: 700; color: #1a202c; }
-    .profit-card { background: white; border: 2px solid #0084ff; border-radius: 12px; padding: 1.5rem; text-align: center; margin-top: 1rem; }
-    .profit-label { font-size: 1.1rem; font-weight: 700; color: #0084ff; }
-    .profit-value { font-size: 2rem; font-weight: 700; }
+    div[data-testid="stMetric"] { background: white !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; padding: 1rem !important; text-align: center !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05) !important; }
+    div[data-testid="stMetricLabel"] { color: #0084ff !important; font-weight: 700 !important; font-size: 1rem !important; }
+    div[data-testid="stMetricValue"] { color: #1a202c !important; font-size: 1.6rem !important; font-weight: 700 !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -115,15 +112,15 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
             total_tcs = numeric_series(payments_df[tcs_col]).sum() if tcs_col else 103.88
             total_tds = numeric_series(payments_df[tds_col]).sum() if tds_col else 20.65
             total_ads = numeric_series(payments_df[ads_col]).sum() if ads_col else 0.0
-            html_pay_preview = f"""
-            <div class="client-grid">
-                <div class="client-card"><div class="client-label">Net Payout</div><div class="client-value">₹{total_net_payout:,.2f}</div></div>
-                <div class="client-card"><div class="client-label">TCS</div><div class="client-value">₹{total_tcs:,.2f}</div></div>
-                <div class="client-card"><div class="client-label">TDS</div><div class="client-value">₹{total_tds:,.2f}</div></div>
-                <div class="client-card"><div class="client-label">Advertisement</div><div class="client-value">₹{total_ads:,.2f}</div></div>
-            </div>
-            """
-            st.markdown(html_pay_preview, unsafe_allow_html=True)
+            
+            # Safe Native Layout for Page 2
+            c1, c2 = st.columns(2)
+            c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
+            c2.metric("TCS", f"₹{total_tcs:,.2f}")
+            st.markdown("<br>", unsafe_allow_html=True)
+            c3, c4 = st.columns(2)
+            c3.metric("TDS", f"₹{total_tds:,.2f}")
+            c4.metric("Advertisement", f"₹{total_ads:,.2f}")
         except Exception as e:
             st.error(f"Payments error: {e}")
     else:
@@ -138,9 +135,9 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
         st.error("⚠️ Operational Error: Dono files ka data hona zaroori hai. Kripya dono files upload karein.")
     else:
         try:
-            ord_id = find_column(ord_df, ORDER_ID_ALIASES) or ord_df.columns[0]
-            pay_id = find_column(pay_df, ORDER_ID_ALIASES) or pay_df.columns[0]
-            payout_col = find_column(pay_df, PAYOUT_ALIASES) or pay_df.columns[1]
+            ord_id = find_column(ord_df, ORDER_ID_ALIASES) or ord_df.columns
+            pay_id = find_column(pay_df, ORDER_ID_ALIASES) or pay_df.columns
+            payout_col = find_column(pay_df, PAYOUT_ALIASES) or pay_df.columns
             tcs_col = find_column(pay_df, TCS_ALIASES)
             tds_col = find_column(pay_df, TDS_ALIASES)
             ads_col = find_column(pay_df, ADS_ALIASES)
@@ -163,5 +160,15 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
             total_wrong_damage = total_orders_count * wrong_damage_input
             final_profit = total_net_payout - total_purchase - total_packing - total_wrong_damage - total_ads
             
-            html_grid = f"""
-            <div class="client-grid">
+            # Safe Native Grid Blocks for Page 3 (No HTML Grid Conflict)
+            r1_c1, r1_c2 = st.columns(2)
+            r1_c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
+            r1_c2.metric("TCS", f"₹{total_tcs:,.2f}")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            r2_c1, r2_c2 = st.columns(2)
+            r2_c1.metric("TDS", f"₹{total_tds:,.2f}")
+            r2_c2.metric("Advertisement", f"₹{total_ads:,.2f}")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            r3_c1, r3_c2, r3_c3 = st.columns(3)
