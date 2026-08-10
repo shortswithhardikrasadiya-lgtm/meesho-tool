@@ -181,4 +181,4 @@ elif selected_tab == "🚀 File Upload":
         if payments_upload:
             raw_bytes_pay = None
             if payments_upload.name.endswith(".zip"):
-                with zipfile.ZipFile(io.BytesIO(payments_upload.getvalue())) as archive_z:
+                archive_z = zipfile.ZipFile(io.BytesIO(payments_upload.getvalue()))
