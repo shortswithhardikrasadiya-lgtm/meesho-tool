@@ -54,14 +54,12 @@ st.sidebar.markdown("### ⚙️ Additional Costs")
 packing_input = st.sidebar.number_input("Per Order Packing Cost (₹)", min_value=0.0, value=10.0)
 wrong_damage_input = st.sidebar.number_input("Wrong/Damage Claims Deduction (₹)", min_value=0.0, value=2.0)
 
-# Memory Box Initialisation to lock files permanently across tabs
 if "sku_costs_db" not in st.session_state: st.session_state["sku_costs_db"] = {}
 if "stored_orders_df" not in st.session_state: st.session_state["stored_orders_df"] = None
 if "stored_payments_df" not in st.session_state: st.session_state["stored_payments_df"] = None
 
 selected_tab = st.radio("Select Section / Page:", ["📦 Orders & Purchase Module", "💰 Payments & Deductions Ledger", "📊 Details Analysis (Reconciliation)"], horizontal=True)
 
-# Shared background storage loaders
 ord_df = st.session_state["stored_orders_df"]
 pay_df = st.session_state["stored_payments_df"]
 
@@ -84,7 +82,7 @@ if selected_tab == "📦 Orders & Purchase Module":
         orders_df = pd.read_csv(io.BytesIO(orders_upload.getvalue()), encoding="utf-8-sig")
         orders_df.columns = [c.strip() for c in orders_df.columns]
         st.session_state["stored_orders_df"] = orders_df
-        st.rerun() # Refresh to instantly cache data globally
+        st.rerun()
         
     if ord_df is not None:
         st.success(f"✓ {len(ord_df)} Orders safely locked in memory!")
@@ -117,7 +115,7 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
         payments_df = pd.read_excel(io.BytesIO(raw_bytes_pay), skiprows=header_idx)
         payments_df.columns = [c.strip() for c in payments_df.columns]
         st.session_state["stored_payments_df"] = payments_df
-        st.rerun() # Refresh to lock variables across dynamic navigation
+        st.rerun()
         
     if pay_df is not None:
         st.success("✓ Settlement file safely locked in memory!")
@@ -155,12 +153,14 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
     if ord_df is None or pay_df is None:
         st.error("⚠️ Operational Error: Dono files ka data hona zaroori hai. Kripya pehle pichle tabs me jaakar dono files upload karein.")
     else:
-        ord_id_match = find_column(ord_df, ORDER_ID_ALIASES)
-        pay_id_match = find_column(pay_df, ORDER_ID_ALIASES)
-        ord_id = ord_id_match if ord_id_match else ord_df.columns
-        pay_id = pay_id_match if pay_id_match else pay_df.columns
-        payout_col = find_column(pay_df, PAYOUT_ALIASES)
+        ord_id_col = find_column(ord_df, ORDER_ID_ALIASES)
+        pay_id_col = find_column(pay_df, ORDER_ID_ALIASES)
         
+        # Strict dynamic fallback to handle strings instead of raw object lists safely
+        ord_target_key = ord_id_col if ord_id_col else ord_df.columns[0]
+        pay_target_key = pay_id_col if pay_id_col else pay_df.columns[0]
+        
+        payout_col = find_column(pay_df, PAYOUT_ALIASES)
         if not payout_col and len(pay_df.columns) > 1:
             numeric_cols = [c for c in pay_df.columns if pay_df[c].dtype in ['int64', 'float64']]
             if numeric_cols: payout_col = numeric_cols[-1]
@@ -170,8 +170,8 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
         ads_col = find_column(pay_df, ADS_ALIASES)
         sku_col = find_column(ord_df, SKU_ALIASES)
         
-        ord_df["clean_id"] = ord_df[ord_id].astype(str).str.strip().str.upper()
-        pay_df["clean_id"] = pay_df[pay_id].astype(str).str.strip().str.upper()
+        ord_df["clean_id"] = ord_df[ord_target_key].astype(str).str.strip().str.upper()
+        pay_df["clean_id"] = pay_df[pay_target_key].astype(str).str.strip().str.upper()
         
         total_net_payout = numeric_series(pay_df[payout_col]).sum() if payout_col else 0.0
         total_tcs = numeric_series(pay_df[tcs_col]).sum() if tcs_col else 103.88
@@ -181,3 +181,5 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
         
         r1_c1, r1_c2 = st.columns(2)
         r1_c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
+        r1_c2.metric("TCS", f"₹{total_tcs:,.2f}")
+        st.markdown("<br>", unsafe_allow_html=True)
