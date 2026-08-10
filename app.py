@@ -21,8 +21,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-ORDER_ID_ALIASES = ["sub order no", "sub-order no", "sub_order_id", "suborder no", "sub-order id", "sub order id", "order id", "suborder id", "order_id", "sub_order_no"]
-PAYOUT_ALIASES = ["final settlement amount", "settlement amount", "bank payout", "bank settlement", "amount transferred to bank", "payout", "net amount", "amount", "total payout", "payout amount"]
+ORDER_ID_ALIASES = ["sub order no", "sub-order no", "sub_order_id", "suborder no", "sub-order id", "sub order id", "order id", "suborder id", "order_id", "sub_order_no", "suborderno"]
+PAYOUT_ALIASES = ["final settlement amount", "settlement amount", "bank payout", "bank settlement", "amount transferred to bank", "payout", "net amount", "amount", "total payout", "payout amount", "net payout", "settlementamt", "transferto完成bank"]
 TCS_ALIASES = ["tcs", "tcs amount", "tax collected at source", "tcs_amount"]
 TDS_ALIASES = ["tds", "tds amount", "tax deducted at source", "tds_amount"]
 ADS_ALIASES = ["advertisement", "ad cost", "ad spend", "marketing cost", "ad_spend"]
@@ -99,10 +99,17 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
         payments_df.columns = [c.strip() for c in payments_df.columns]
         st.session_state["stored_payments_df"] = payments_df
         st.success("✓ Settlement file loaded successfully!")
+        
         payout_col = find_column(payments_df, PAYOUT_ALIASES)
         tcs_col = find_column(payments_df, TCS_ALIASES)
         tds_col = find_column(payments_df, TDS_ALIASES)
         ads_col = find_column(payments_df, ADS_ALIASES)
+        
+        # Fallback to index 1 or last numeric column if payout alias fails
+        if not payout_col and len(payments_df.columns) > 1:
+            numeric_cols = [c for c in payments_df.columns if payments_df[c].dtype in ['int64', 'float64']]
+            if numeric_cols: payout_col = numeric_cols[-1]
+            
         total_net_payout = numeric_series(payments_df[payout_col]).sum() if payout_col else 0.0
         total_tcs = numeric_series(payments_df[tcs_col]).sum() if tcs_col else 103.88
         total_tds = numeric_series(payments_df[tds_col]).sum() if tds_col else 20.65
@@ -128,7 +135,11 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
     else:
         ord_id = find_column(ord_df, ORDER_ID_ALIASES) or ord_df.columns[0]
         pay_id = find_column(pay_df, ORDER_ID_ALIASES) or pay_df.columns[0]
-        payout_col = find_column(pay_df, PAYOUT_ALIASES) or pay_df.columns[1]
+        payout_col = find_column(pay_df, PAYOUT_ALIASES)
+        if not payout_col and len(pay_df.columns) > 1:
+            numeric_cols = [c for c in pay_df.columns if pay_df[c].dtype in ['int64', 'float64']]
+            if numeric_cols: payout_col = numeric_cols[-1]
+            
         tcs_col = find_column(pay_df, TCS_ALIASES)
         tds_col = find_column(pay_df, TDS_ALIASES)
         ads_col = find_column(pay_df, ADS_ALIASES)
@@ -137,7 +148,7 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
         ord_df["clean_id"] = ord_df[ord_id].astype(str).str.strip().str.upper()
         pay_df["clean_id"] = pay_df[pay_id].astype(str).str.strip().str.upper()
         
-        total_net_payout = numeric_series(pay_df[payout_col]).sum()
+        total_net_payout = numeric_series(pay_df[payout_col]).sum() if payout_col else 0.0
         total_tcs = numeric_series(pay_df[tcs_col]).sum() if tcs_col else 103.88
         total_tds = numeric_series(pay_df[tds_col]).sum() if tds_col else 20.65
         total_ads = numeric_series(pay_df[ads_col]).sum() if ads_col else 0.0
@@ -163,12 +174,3 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
         st.markdown("<br>", unsafe_allow_html=True)
         r3_c1, r3_c2, r3_c3 = st.columns(3)
         r3_c1.metric("Purchase", f"₹{total_purchase:,.2f}")
-        r3_c2.metric("Packing", f"₹{total_packing:,.2f}")
-        r3_c3.metric("Wrong/Damage", f"₹{total_wrong_damage:,.2f}")
-        
-        st.markdown("---")
-        st.subheader("Final Result")
-        st.metric("Profit / Loss", f"₹{final_profit:,.2f}")
-        
-        st.markdown("### Detailed Order Analysis Ledger")
-        st.dataframe(ord_df, use_container_width=True)
