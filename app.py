@@ -180,6 +180,5 @@ elif selected_tab == "🚀 File Upload":
     with col2:
         payments_upload = st.file_uploader("Upload Settlement Statement File (ZIP/XLSX)", type=["xlsx", "zip"], key="sunix_payments")
         if payments_upload:
-            raw_bytes_pay = None
-            is_zip = payments_upload.name.endswith(".zip")
-            if is_zip:
+            raw_bytes_pay = payments_upload.getvalue()
+            if payments_upload.name.endswith(".zip"):
