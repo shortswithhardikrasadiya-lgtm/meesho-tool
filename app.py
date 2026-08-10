@@ -264,34 +264,68 @@ def detect_file_type(name: str) -> str:
 
 
 def read_tabular_bytes(data: bytes, name: str):
+    """
+    Read Meesho Order CSVs and Meesho Payment Excel reports.
+
+    Meesho's payment workbook has multiple sheets. The useful payment
+    transactions are on the "Order Payments" sheet, where row 2
+    (Excel row 2 / pandas header=1) contains the real column names.
+    """
     kind = detect_file_type(name)
 
     try:
         if kind == "csv":
-            try:
-                return pd.read_csv(io.BytesIO(data), encoding="utf-8-sig")
-            except UnicodeDecodeError:
-                return pd.read_csv(io.BytesIO(data), encoding="latin1")
+            # Try UTF-8 first, then common Indian CSV encodings.
+            for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
+                try:
+                    df = pd.read_csv(io.BytesIO(data), encoding=encoding)
+                    df.columns = [str(c).strip() for c in df.columns]
+                    return df
+                except (UnicodeDecodeError, pd.errors.ParserError):
+                    continue
+            return None
 
         if kind == "excel":
-            return pd.read_excel(io.BytesIO(data))
+            xls = pd.ExcelFile(io.BytesIO(data))
+
+            # This is the actual Meesho payment transaction sheet.
+            if "Order Payments" in xls.sheet_names:
+                df = pd.read_excel(
+                    io.BytesIO(data),
+                    sheet_name="Order Payments",
+                    header=1,
+                )
+            else:
+                # Fallback for other Excel payment exports.
+                df = pd.read_excel(io.BytesIO(data))
+
+            df = df.dropna(how="all").copy()
+            df.columns = [
+                f"Column_{i+1}" if not str(c).strip() or str(c).lower().startswith("unnamed")
+                else str(c).strip()
+                for i, c in enumerate(df.columns)
+            ]
+            return df
 
     except Exception as exc:
-        st.warning(f"Could not read {name}: {exc}")
+        st.error(f"Could not read {name}: {type(exc).__name__}: {exc}")
+        return None
 
     return None
 
-
 def extract_payment_zip(uploaded_file):
-    """Read CSV/XLSX files found inside one or more payment ZIP files."""
+    """Read supported CSV/XLSX files inside a Meesho payment ZIP."""
     frames = []
 
     try:
         with zipfile.ZipFile(io.BytesIO(uploaded_file.getvalue())) as z:
-            for member in z.namelist():
-                if member.endswith("/") or member.startswith("__MACOSX/"):
-                    continue
+            members = [
+                m for m in z.namelist()
+                if not m.endswith("/")
+                and not m.startswith("__MACOSX/")
+            ]
 
+            for member in members:
                 name = member.split("/")[-1]
                 kind = detect_file_type(name)
                 if kind == "unknown":
@@ -300,28 +334,38 @@ def extract_payment_zip(uploaded_file):
                 try:
                     raw = z.read(member)
                     df = read_tabular_bytes(raw, name)
+
                     if df is not None and not df.empty:
                         df.columns = [str(c).strip() for c in df.columns]
                         df["_source_file"] = name
                         frames.append(df)
-                except Exception:
-                    continue
+                except Exception as exc:
+                    st.warning(f"Skipped {name}: {type(exc).__name__}: {exc}")
+
     except zipfile.BadZipFile:
         st.error(f"{uploaded_file.name} is not a valid ZIP file.")
+        return None
     except Exception as exc:
-        st.error(f"Could not process {uploaded_file.name}: {exc}")
+        st.error(f"Could not process {uploaded_file.name}: {type(exc).__name__}: {exc}")
+        return None
 
     if not frames:
+        st.error(
+            f"No readable CSV/XLSX files were found inside {uploaded_file.name}."
+        )
         return None
 
     return pd.concat(frames, ignore_index=True, sort=False)
+
 
 
 def process_payment_files(files):
     frames = []
 
     for uploaded in files or []:
-        if uploaded.name.lower().endswith(".zip"):
+        filename = uploaded.name.lower()
+
+        if filename.endswith(".zip"):
             df = extract_payment_zip(uploaded)
         else:
             df = read_tabular_bytes(uploaded.getvalue(), uploaded.name)
@@ -332,8 +376,55 @@ def process_payment_files(files):
     if not frames:
         return None
 
-    return pd.concat(frames, ignore_index=True, sort=False)
+    result = pd.concat(frames, ignore_index=True, sort=False)
 
+    # Keep the result only if it looks like a payment/order-payment report.
+    # This prevents a Disclaimer sheet from being treated as payment data.
+    if not find_column(result, ORDER_ID_ALIASES) and not find_column(result, PAYOUT_ALIASES):
+        st.error(
+            "Payment file was read, but no Meesho payment columns were found. "
+            "Please upload the Meesho Payment/Settlement Excel or ZIP."
+        )
+        return None
+
+    return result
+
+
+
+
+def validate_meesho_files(order_df, payment_df):
+    """Return human-readable validation errors for the two uploaded reports."""
+    errors = []
+
+    if order_df is None or order_df.empty:
+        errors.append("Order CSV could not be read or contains no data.")
+    else:
+        order_id = find_column(order_df, ORDER_ID_ALIASES)
+        sku = find_column(order_df, SKU_ALIASES)
+        if not order_id:
+            errors.append(
+                "Order CSV is readable, but 'Sub Order No' was not detected."
+            )
+        if not sku:
+            errors.append(
+                "Order CSV is readable, but 'SKU' was not detected."
+            )
+
+    if payment_df is None or payment_df.empty:
+        errors.append("Payment Excel/ZIP could not be read or contains no payment data.")
+    else:
+        payment_order_id = find_column(payment_df, ORDER_ID_ALIASES)
+        payout = find_column(payment_df, PAYOUT_ALIASES)
+        if not payment_order_id:
+            errors.append(
+                "Payment report is readable, but 'Sub Order No' was not detected."
+            )
+        if not payout:
+            errors.append(
+                "Payment report is readable, but 'Final Settlement Amount' was not detected."
+            )
+
+    return errors
 
 def serialize_df(df):
     return df.to_dict(orient="list") if df is not None else None
@@ -835,27 +926,48 @@ elif selected == "File Upload":
                 )
                 payment_df = process_payment_files(payment_uploads)
 
-                if order_df is not None and not order_df.empty:
-                    order_df.columns = [str(c).strip() for c in order_df.columns]
-                    st.session_state["stored_orders"] = serialize_df(order_df)
+            errors = validate_meesho_files(order_df, payment_df)
 
-                if payment_df is not None and not payment_df.empty:
-                    payment_df.columns = [str(c).strip() for c in payment_df.columns]
-                    st.session_state["stored_payments"] = serialize_df(payment_df)
+            if not errors:
+                order_df.columns = [str(c).strip() for c in order_df.columns]
+                payment_df.columns = [str(c).strip() for c in payment_df.columns]
 
+                st.session_state["stored_orders"] = serialize_df(order_df)
+                st.session_state["stored_payments"] = serialize_df(payment_df)
                 st.session_state["last_processed"] = datetime.now().strftime(
                     "%d-%m-%Y %I:%M %p"
                 )
 
-            if st.session_state["stored_orders"] is not None and st.session_state["stored_payments"] is not None:
                 st.success(
-                    f"✓ Files processed successfully. Last processed: {st.session_state['last_processed']}"
+                    f"✓ Files processed successfully — "
+                    f"{len(order_df):,} orders and {len(payment_df):,} payment rows."
+                )
+
+                # Show exactly what the app detected before rerun.
+                st.info(
+                    f"Order columns detected: SKU={find_column(order_df, SKU_ALIASES)!r}, "
+                    f"Order ID={find_column(order_df, ORDER_ID_ALIASES)!r} | "
+                    f"Payment columns detected: Sub Order No={find_column(payment_df, ORDER_ID_ALIASES)!r}, "
+                    f"Payout={find_column(payment_df, PAYOUT_ALIASES)!r}, "
+                    f"TCS={find_column(payment_df, TCS_ALIASES)!r}, "
+                    f"TDS={find_column(payment_df, TDS_ALIASES)!r}"
                 )
                 st.rerun()
             else:
-                st.warning(
-                    "Some files could not be read. Check the uploaded formats and column structure."
-                )
+                st.error("File processing failed:")
+                for error in errors:
+                    st.write("• " + error)
+
+                if order_df is not None:
+                    st.caption(
+                        f"Order file read successfully: {len(order_df):,} rows. "
+                        f"Columns: {list(order_df.columns)}"
+                    )
+                if payment_df is not None:
+                    st.caption(
+                        f"Payment file read successfully: {len(payment_df):,} rows. "
+                        f"Columns: {list(payment_df.columns)}"
+                    )
 
     if st.session_state.get("last_processed"):
         st.caption(f"Last processed: {st.session_state['last_processed']}")
