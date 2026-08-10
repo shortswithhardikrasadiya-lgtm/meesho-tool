@@ -177,9 +177,9 @@ elif selected_tab == "🚀 File Upload":
             st.session_state["stored_orders"] = df_ord.to_dict(orient="list")
             st.success("✓ Orders master database registry synchronized!")
             st.rerun()
-            
     with col2:
         payments_upload = st.file_uploader("Upload Settlement Statement File (ZIP/XLSX)", type=["xlsx", "zip"], key="sunix_payments")
         if payments_upload:
             raw_bytes_pay = None
-            if payments_upload.name.endswith(".zip"):
+            is_zip = payments_upload.name.endswith(".zip")
+            if is_zip:
