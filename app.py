@@ -6,7 +6,6 @@ import streamlit as st
 
 st.set_page_config(page_title="Meesho Profit Loss Calculator", layout="wide")
 
-# Custom Styling with Safe Streamlit Functions
 st.markdown(
     """
     <style>
@@ -65,19 +64,16 @@ if selected_tab == "📦 Orders & Purchase Module":
     st.markdown("## Orders File Upload & Purchase Settings")
     orders_upload = st.file_uploader("Upload Meesho Orders CSV", type=["csv"], key="tab1_orders")
     if orders_upload:
-        try:
-            orders_df = pd.read_csv(io.BytesIO(orders_upload.getvalue()), encoding="utf-8-sig")
-            orders_df.columns = [c.strip() for c in orders_df.columns]
-            st.session_state["stored_orders_df"] = orders_df
-            st.success(f"✓ {len(orders_df)} Orders loaded successfully!")
-            sku_col = find_column(orders_df, SKU_ALIASES)
-            unique_skus = orders_df[sku_col].dropna().unique() if sku_col else ["Default Product"]
-            st.markdown("### 📋 Purchase Details (Manual Cost Setup)")
-            for sku in unique_skus:
-                curr_val = st.session_state["sku_costs_db"].get(sku, 100.0)
-                st.session_state["sku_costs_db"][sku] = st.number_input(f"B - {sku} (Purchase Value)", min_value=0.0, value=float(curr_val), key=f"input_sku_{sku}")
-        except Exception as e:
-            st.error(f"Orders error: {e}")
+        orders_df = pd.read_csv(io.BytesIO(orders_upload.getvalue()), encoding="utf-8-sig")
+        orders_df.columns = [c.strip() for c in orders_df.columns]
+        st.session_state["stored_orders_df"] = orders_df
+        st.success(f"✓ {len(orders_df)} Orders loaded successfully!")
+        sku_col = find_column(orders_df, SKU_ALIASES)
+        unique_skus = orders_df[sku_col].dropna().unique() if sku_col else ["Default Product"]
+        st.markdown("### 📋 Purchase Details (Manual Cost Setup)")
+        for sku in unique_skus:
+            curr_val = st.session_state["sku_costs_db"].get(sku, 100.0)
+            st.session_state["sku_costs_db"][sku] = st.number_input(f"B - {sku} (Purchase Value)", min_value=0.0, value=float(curr_val), key=f"input_sku_{sku}")
     else:
         if st.session_state["stored_orders_df"] is not None: st.info("✓ Orders loaded in memory.")
         else: st.warning("Awaiting file. Please upload your Orders CSV.")
@@ -86,43 +82,39 @@ elif selected_tab == "💰 Payments & Deductions Ledger":
     st.markdown("## Payments Registry & Taxation Metrics")
     payments_upload = st.file_uploader("Upload Payments ZIP / XLSX", type=["xlsx", "zip"], key="tab2_payments")
     if payments_upload:
-        try:
-            if payments_upload.name.endswith(".zip"):
-                with zipfile.ZipFile(io.BytesIO(payments_upload.getvalue())) as z:
-                    excel_files = [f for f in z.namelist() if f.endswith('.xlsx') or f.endswith('.xls')]
-                    with z.open(excel_files) as f: raw_bytes_pay = f.read()
-            else:
-                raw_bytes_pay = payments_upload.getvalue()
-            df_raw_pay = pd.read_excel(io.BytesIO(raw_bytes_pay), header=None)
-            header_idx = 0
-            for i, row in df_raw_pay.iterrows():
-                row_str = [clean_column(str(val)) for val in row.values]
-                if any(clean_column(alias) in row_str for alias in ORDER_ID_ALIASES):
-                    header_idx = i
-                    break
-            payments_df = pd.read_excel(io.BytesIO(raw_bytes_pay), skiprows=header_idx)
-            payments_df.columns = [c.strip() for c in payments_df.columns]
-            st.session_state["stored_payments_df"] = payments_df
-            st.success("✓ Settlement file loaded successfully!")
-            payout_col = find_column(payments_df, PAYOUT_ALIASES)
-            tcs_col = find_column(payments_df, TCS_ALIASES)
-            tds_col = find_column(payments_df, TDS_ALIASES)
-            ads_col = find_column(payments_df, ADS_ALIASES)
-            total_net_payout = numeric_series(payments_df[payout_col]).sum() if payout_col else 0.0
-            total_tcs = numeric_series(payments_df[tcs_col]).sum() if tcs_col else 103.88
-            total_tds = numeric_series(payments_df[tds_col]).sum() if tds_col else 20.65
-            total_ads = numeric_series(payments_df[ads_col]).sum() if ads_col else 0.0
-            
-            # Safe Native Layout for Page 2
-            c1, c2 = st.columns(2)
-            c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
-            c2.metric("TCS", f"₹{total_tcs:,.2f}")
-            st.markdown("<br>", unsafe_allow_html=True)
-            c3, c4 = st.columns(2)
-            c3.metric("TDS", f"₹{total_tds:,.2f}")
-            c4.metric("Advertisement", f"₹{total_ads:,.2f}")
-        except Exception as e:
-            st.error(f"Payments error: {e}")
+        if payments_upload.name.endswith(".zip"):
+            with zipfile.ZipFile(io.BytesIO(payments_upload.getvalue())) as z:
+                excel_files = [f for f in z.namelist() if f.endswith('.xlsx') or f.endswith('.xls')]
+                with z.open(excel_files) as f: raw_bytes_pay = f.read()
+        else:
+            raw_bytes_pay = payments_upload.getvalue()
+        df_raw_pay = pd.read_excel(io.BytesIO(raw_bytes_pay), header=None)
+        header_idx = 0
+        for i, row in df_raw_pay.iterrows():
+            row_str = [clean_column(str(val)) for val in row.values]
+            if any(clean_column(alias) in row_str for alias in ORDER_ID_ALIASES):
+                header_idx = i
+                break
+        payments_df = pd.read_excel(io.BytesIO(raw_bytes_pay), skiprows=header_idx)
+        payments_df.columns = [c.strip() for c in payments_df.columns]
+        st.session_state["stored_payments_df"] = payments_df
+        st.success("✓ Settlement file loaded successfully!")
+        payout_col = find_column(payments_df, PAYOUT_ALIASES)
+        tcs_col = find_column(payments_df, TCS_ALIASES)
+        tds_col = find_column(payments_df, TDS_ALIASES)
+        ads_col = find_column(payments_df, ADS_ALIASES)
+        total_net_payout = numeric_series(payments_df[payout_col]).sum() if payout_col else 0.0
+        total_tcs = numeric_series(payments_df[tcs_col]).sum() if tcs_col else 103.88
+        total_tds = numeric_series(payments_df[tds_col]).sum() if tds_col else 20.65
+        total_ads = numeric_series(payments_df[ads_col]).sum() if ads_col else 0.0
+        
+        c1, c2 = st.columns(2)
+        c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
+        c2.metric("TCS", f"₹{total_tcs:,.2f}")
+        st.markdown("<br>", unsafe_allow_html=True)
+        c3, c4 = st.columns(2)
+        c3.metric("TDS", f"₹{total_tds:,.2f}")
+        c4.metric("Advertisement", f"₹{total_ads:,.2f}")
     else:
         if st.session_state["stored_payments_df"] is not None: st.info("✓ Payments loaded in memory.")
         else: st.warning("Awaiting file. Please upload your Payments file.")
@@ -134,41 +126,49 @@ elif selected_tab == "📊 Details Analysis (Reconciliation)":
     if ord_df is None or pay_df is None:
         st.error("⚠️ Operational Error: Dono files ka data hona zaroori hai. Kripya dono files upload karein.")
     else:
-        try:
-            ord_id = find_column(ord_df, ORDER_ID_ALIASES) or ord_df.columns
-            pay_id = find_column(pay_df, ORDER_ID_ALIASES) or pay_df.columns
-            payout_col = find_column(pay_df, PAYOUT_ALIASES) or pay_df.columns
-            tcs_col = find_column(pay_df, TCS_ALIASES)
-            tds_col = find_column(pay_df, TDS_ALIASES)
-            ads_col = find_column(pay_df, ADS_ALIASES)
-            sku_col = find_column(ord_df, SKU_ALIASES)
-            
-            ord_df["clean_id"] = ord_df[ord_id].astype(str).str.strip().str.upper()
-            pay_df["clean_id"] = pay_df[pay_id].astype(str).str.strip().str.upper()
-            
-            total_net_payout = numeric_series(pay_df[payout_col]).sum()
-            total_tcs = numeric_series(pay_df[tcs_col]).sum() if tcs_col else 103.88
-            total_tds = numeric_series(pay_df[tds_col]).sum() if tds_col else 20.65
-            total_ads = numeric_series(pay_df[ads_col]).sum() if ads_col else 0.0
-            
-            if sku_col: ord_df["purchase_cost"] = ord_df[sku_col].map(st.session_state["sku_costs_db"]).fillna(100.0)
-            else: ord_df["purchase_cost"] = 100.0
-            
-            total_purchase = ord_df["purchase_cost"].sum()
-            total_orders_count = len(ord_df)
-            total_packing = total_orders_count * packing_input
-            total_wrong_damage = total_orders_count * wrong_damage_input
-            final_profit = total_net_payout - total_purchase - total_packing - total_wrong_damage - total_ads
-            
-            # Safe Native Grid Blocks for Page 3 (No HTML Grid Conflict)
-            r1_c1, r1_c2 = st.columns(2)
-            r1_c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
-            r1_c2.metric("TCS", f"₹{total_tcs:,.2f}")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            r2_c1, r2_c2 = st.columns(2)
-            r2_c1.metric("TDS", f"₹{total_tds:,.2f}")
-            r2_c2.metric("Advertisement", f"₹{total_ads:,.2f}")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            r3_c1, r3_c2, r3_c3 = st.columns(3)
+        ord_id = find_column(ord_df, ORDER_ID_ALIASES) or ord_df.columns[0]
+        pay_id = find_column(pay_df, ORDER_ID_ALIASES) or pay_df.columns[0]
+        payout_col = find_column(pay_df, PAYOUT_ALIASES) or pay_df.columns[1]
+        tcs_col = find_column(pay_df, TCS_ALIASES)
+        tds_col = find_column(pay_df, TDS_ALIASES)
+        ads_col = find_column(pay_df, ADS_ALIASES)
+        sku_col = find_column(ord_df, SKU_ALIASES)
+        
+        ord_df["clean_id"] = ord_df[ord_id].astype(str).str.strip().str.upper()
+        pay_df["clean_id"] = pay_df[pay_id].astype(str).str.strip().str.upper()
+        
+        total_net_payout = numeric_series(pay_df[payout_col]).sum()
+        total_tcs = numeric_series(pay_df[tcs_col]).sum() if tcs_col else 103.88
+        total_tds = numeric_series(pay_df[tds_col]).sum() if tds_col else 20.65
+        total_ads = numeric_series(pay_df[ads_col]).sum() if ads_col else 0.0
+        
+        if sku_col: ord_df["purchase_cost"] = ord_df[sku_col].map(st.session_state["sku_costs_db"]).fillna(100.0)
+        else: ord_df["purchase_cost"] = 100.0
+        
+        total_purchase = ord_df["purchase_cost"].sum()
+        total_orders_count = len(ord_df)
+        total_packing = total_orders_count * packing_input
+        total_wrong_damage = total_orders_count * wrong_damage_input
+        final_profit = total_net_payout - total_purchase - total_packing - total_wrong_damage - total_ads
+        
+        r1_c1, r1_c2 = st.columns(2)
+        r1_c1.metric("Net Payout", f"₹{total_net_payout:,.2f}")
+        r1_c2.metric("TCS", f"₹{total_tcs:,.2f}")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        r2_c1, r2_c2 = st.columns(2)
+        r2_c1.metric("TDS", f"₹{total_tds:,.2f}")
+        r2_c2.metric("Advertisement", f"₹{total_ads:,.2f}")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        r3_c1, r3_c2, r3_c3 = st.columns(3)
+        r3_c1.metric("Purchase", f"₹{total_purchase:,.2f}")
+        r3_c2.metric("Packing", f"₹{total_packing:,.2f}")
+        r3_c3.metric("Wrong/Damage", f"₹{total_wrong_damage:,.2f}")
+        
+        st.markdown("---")
+        st.subheader("Final Result")
+        st.metric("Profit / Loss", f"₹{final_profit:,.2f}")
+        
+        st.markdown("### Detailed Order Analysis Ledger")
+        st.dataframe(ord_df, use_container_width=True)
