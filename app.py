@@ -65,12 +65,10 @@ def clean_column(value: object) -> str:
     return re.sub(r"[^a-z0-9]", "", text)
 
 def find_column(frame: pd.DataFrame, aliases: Iterable[str]) -> str | None:
-    # First soft match pass
     for alias in aliases:
         target = clean_column(alias)
         for col in frame.columns:
             if clean_column(col) == target: return col
-    # Secondary fallback broad pass
     for alias in aliases:
         target = clean_column(alias)
         for col in frame.columns:
@@ -99,11 +97,9 @@ wrong_damage_input = st.sidebar.number_input("Wrong/Damage Claims Deducation (�
 
 if orders_upload and payments_upload:
     try:
-        # Read Orders
         raw_bytes_ord = orders_upload.getvalue()
         orders_df = pd.read_csv(io.BytesIO(raw_bytes_ord), encoding="utf-8-sig")
         
-        # Read Payments safely skipping top group rows
         if payments_upload.name.endswith(".zip"):
             with zipfile.ZipFile(io.BytesIO(payments_upload.getvalue())) as z:
                 excel_files = [f for f in z.namelist() if f.endswith('.xlsx') or f.endswith('.xls')]
@@ -121,11 +117,9 @@ if orders_upload and payments_upload:
                 break
         payments_df = pd.read_excel(io.BytesIO(raw_bytes_pay), skiprows=header_idx)
         
-        # Lowercase headers to handle varying file exports gracefully
         orders_df.columns = [c.strip() for c in orders_df.columns]
         payments_df.columns = [c.strip() for c in payments_df.columns]
         
-        # Columns Discovery
         ord_id = find_column(orders_df, ORDER_ID_ALIASES)
         pay_id = find_column(payments_df, ORDER_ID_ALIASES)
         payout_col = find_column(payments_df, PAYOUT_ALIASES)
@@ -134,20 +128,16 @@ if orders_upload and payments_upload:
         ads_col = find_column(payments_df, ADS_ALIASES)
         sku_col = find_column(orders_df, SKU_ALIASES) or find_column(payments_df, SKU_ALIASES)
 
-        # Smart fallback if columns still aren't fully resolved via exact names
         if not ord_id and len(orders_df.columns) > 0: ord_id = orders_df.columns[0]
         if not pay_id and len(payments_df.columns) > 0: pay_id = payments_df.columns[0]
         if not payout_col and len(payments_df.columns) > 1: payout_col = payments_df.columns[1]
 
         if not ord_id or not pay_id or not payout_col:
-            st.error("Error: Sub-Order ID ya Payout columns report me nahi mile.")
-            st.write("Detected Orders Headers:", list(orders_df.columns))
-            st.write("Detected Payments Headers:", list(payments_df.columns))
+            st.error("Error: Columns report me nahi mile.")
         else:
             orders_df["clean_id"] = normalize_id(orders_df[ord_id])
             payments_df["clean_id"] = normalize_id(payments_df[pay_id])
             
-            # Extract Metrics From Settlement File
             total_net_payout = numeric_series(payments_df[payout_col]).sum()
             total_tcs = numeric_series(payments_df[tcs_col]).sum() if tcs_col else 103.88
             total_tds = numeric_series(payments_df[tds_col]).sum() if tds_col else 20.65
@@ -196,3 +186,9 @@ if orders_upload and payments_upload:
             st.markdown(html_grid, unsafe_allow_html=True)
             
             st.markdown("### Detailed Order Analysis Ledger")
+            st.dataframe(orders_df[[ord_id, sku_col, "purchase_cost"]] if sku_col else orders_df[[ord_id]], use_container_width=True)
+            
+    except Exception as e:
+        st.error(f"File core configuration error: {e}")
+else:
+    st.info("ℹ️ Kripya apni Meesho Orders aur Payments file upload karein.")
