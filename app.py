@@ -86,14 +86,12 @@ def numeric_series(series: pd.Series) -> pd.Series:
 
 st.markdown('<div class="sunix-header"><div class="sunix-logo">⚙️ Sunix Insights <span>- Profit & Loss</span></div></div>', unsafe_allow_html=True)
 
-# Pakki Permanent Memory Box Setup
 if "sku_costs_db" not in st.session_state: st.session_state["sku_costs_db"] = {}
 if "stored_orders" not in st.session_state: st.session_state["stored_orders"] = None
 if "stored_payments" not in st.session_state: st.session_state["stored_payments"] = None
 
 selected_tab = st.radio("Navigation Menu:", ["📊 Dashboard", "📦 Products", "📝 Orders", "🚀 File Upload"], horizontal=True, label_visibility="collapsed")
 
-# Tab badalne par bhi data isi memory se load hoga
 ord_df = pd.DataFrame(st.session_state["stored_orders"]) if st.session_state["stored_orders"] is not None else None
 pay_df = pd.DataFrame(st.session_state["stored_payments"]) if st.session_state["stored_payments"] is not None else None
 
@@ -178,8 +176,10 @@ elif selected_tab == "🚀 File Upload":
             df_ord.columns = [c.strip() for c in df_ord.columns]
             st.session_state["stored_orders"] = df_ord.to_dict(orient="list")
             st.success("✓ Orders master database registry synchronized!")
-            st.rerun() # Yeh data ko save karke screen refresh karega taaki data lock ho jaye
+            st.rerun()
             
     with col2:
         payments_upload = st.file_uploader("Upload Settlement Statement File (ZIP/XLSX)", type=["xlsx", "zip"], key="sunix_payments")
         if payments_upload:
+            raw_bytes_pay = None
+            if payments_upload.name.endswith(".zip"):
